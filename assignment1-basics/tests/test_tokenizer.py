@@ -2,8 +2,24 @@ from __future__ import annotations
 
 import json
 import os
-import resource
 import sys
+
+try:
+    import resource
+except ImportError:
+    # 如果是在 Windows 上报错，我们创建一个假的 resource 对象
+    # 这样代码加载时就不会崩，但如果测试真的调用了内存检查，可能会失败（这没关系）
+    if sys.platform == 'win32':
+        class MockResource:
+            RUSAGE_SELF = 0
+            def getrusage(self, who):
+                class Usage:
+                    ru_maxrss = 0 # 返回假内存数据
+                return Usage()
+        resource = MockResource()
+    else:
+        raise  # 如果不是 Windows 却导入失败，那就真报错
+
 
 import psutil
 import pytest
