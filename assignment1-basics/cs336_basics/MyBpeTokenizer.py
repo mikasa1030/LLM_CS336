@@ -1,9 +1,12 @@
+from heapq import heappop, heappush
 from optparse import Values
+from re import split
+from types import new_class
 import regex as re
 from collections import Counter,defaultdict
 from typing import List,Dict,Tuple,Set
 
-from torch import special
+from torch import pairwise_distance, special
 
 class Pretokenizer:
     def __init__(self,special_tokens: List[str]):
@@ -51,7 +54,6 @@ class BPETokenizer:
             encode_token = token.encode('utf-8')
             if encode_token not in self.vocab.values():
                 self.vocab[len(self.vocab)] = encode_token
-
     def tokenizer(self,text:str)->Tuple[Dict[int,bytes],List[Tuple[bytes,bytes]]]:
         all_tokens = self.pretokenizer.tokenize(text)
         special_tokens = set(self.pretokenizer.special_tokens.values())
@@ -86,8 +88,82 @@ class BPETokenizer:
 
             self.update_data_struct(best_pair, new_token_bytes, splits, pair_freq, pair_words, word_freq, freq_max_heap)
 
-        
         return self.vocab,merged
+
+    def find_best_pair(self,freq_max_heap: List,pair_freq:Dict)-> Tuple[bytes,bytes]:
+
+        while freq_max_heap:
+            neg_freq,pair = heap.heappop(freq_max_heap)
+            freq = -neg_freq
+
+            if pair not in pair_freq or pair_freq[pair]!=freq:
+                continue
+            best_pair = pair
+            candiates = []
+            while freq_max_heap and freq_max_heap[0][0] == neg_freq:
+                _ , other_pair = heap.heappop(freq_max_heap)
+                if other_pair in pair_freq and pair_freq[other_pair] == freq:
+                    if other_pair>best_pair:
+                        candidates.append(best_pair)
+                        best_pair = other_pair
+                    else:
+                        candiates.append(other_pair)
+            
+            for p in candiates:
+                heap.heappush(freq_max_heap,(neg_freq,p))
+            return best_pair
+        return None
+
+    def update_data_struct(best_pair: Tuple, new_token_bytes:bytes, splits:Dict, pair_freq:Dict, pair_words:Dict, word_freq:Dict, freq_max_heap:List):
+        for word in list(pair_words.get(best_pair,[])):
+            freq = word_freq[word]
+            word_list = splits[word]
+
+            i = 0
+            while i<len(word_list):
+                if word_list[i] == best_pair[0] and word_list[i+1]==best_pair[1]:
+                    word_list[i] = new_token_bytes
+                    word_list.pop(i+1)
+                
+                if i>0:
+                    self.update_single_data((word_list[i-1],best_pair[0]),-freq,pair_freq,pair_words,word_freq,freq_max_heap,word)
+                if i<len(word_list)-1:
+                    self.update_single_data((best_pair[1],word_list[i+1]),-freq,pair_freq,pair_words,word_freq,freq_max_heap,word)
+
+                if i>0:
+                    self.update_single_data((word_list[i-1],new_token_bytes),-freq,pair_freq,pair_words,word_freq,freq_max_heap,word)
+                if i<len(word_list)-1:
+                    self.update_single_data((new_token_bytes,word_list[i+1]),-freq,pair_freq,pair_words,word_freq,freq_max_heap,word)
+            
+        if best_pair in pair_freq:
+            del pair_freq[best_pair]
+        if best_pair in pair_words:
+            del pair_words[best_pair]
+    
+    def update_single_data(self,pairs:Tuple,neg_freq: int,pair_freq:Dict,pair_words:Dict,word_freq: Dict,freq_max_heap: List,word:bytes):
+        pair_freq[pairs] += neg_freq
+
+        if pair_freq[pairs]>0:
+            pair_words[pairs].add(word)
+            heap.heappush(freq_max_heap,(pair_freq[pairs],pairs))
+        else:
+            del pair_freq[pairs]
+            if pairs in pair_words:
+                pair_words[pairs].discard(word)
+                if not pair_words[pairs]:
+                    del pair_words[pairs]
+        
+
+    
+
+
+
+                
+
+
+
+
+
 
         
 
