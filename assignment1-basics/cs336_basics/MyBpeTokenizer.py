@@ -152,6 +152,21 @@ class BPETokenizer:
                 pair_words[pairs].discard(word)
                 if not pair_words[pairs]:
                     del pair_words[pairs]
+
+
+def train_bpe(input_path:str,vocab_size:int,special_tokens:List[bytes])-> Tuple[Dict[int,bytes],List[Tuple[bytes,bytes]]]:
+    try:
+        with open(input_path,'r',encoding="utf-8") as f:
+            text = f.read()
+    except FileNotFoundError:
+        print(f"donot exist file in {input_path}")
+        return {},[]
+
+    MyBpeTokenizer = BPETokenizer(vocab_size,special_tokens)
+    vocab,merged = MyBpeTokenizer.tokenizer(text) 
+    return vocab,merged
+
+
         
 
     
