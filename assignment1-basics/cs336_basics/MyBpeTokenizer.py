@@ -1,7 +1,10 @@
+from time import sleep
 import regex as re
 from collections import Counter, defaultdict
-from typing import List, Dict, Tuple, Set,Optional
-import heapq # 修正导入
+from typing import List, Dict, Tuple, Set,Optional,Iterable,Iterator
+import heapq
+
+from torch.onnx import select_model_mode_for_export # 修正导入
 
 class Pretokenizer:
     def __init__(self, special_tokens: List[str]):
@@ -168,3 +171,99 @@ def train_bpe(input_path: str, vocab_size: int, special_tokens: List[str]) -> Tu
     tokenizer_instance = BPETokenizer(vocab_size, special_tokens)
     vocab, merged = tokenizer_instance.tokenizer(text) 
     return vocab, merged
+
+
+class Tokenizer:
+    def __init__(self, vocab: Dict[int, bytes], merged: List[Tuple[bytes, bytes]], special_tokens: Optional[List[str]] = None):
+        self.vocab = vocab
+        self.merged = merged
+
+        self.bytes_to_ids = {v: k for k, v in self.vocab.items()}
+        self.merged_ranks = {pair: i for i, pair in enumerate(self.merged)}
+
+        self.special_tokens = {}
+        self.special_pattern = None  # ✅ 拼写统一
+
+        if special_tokens:
+            sorted_tokens = sorted(special_tokens, key=len, reverse=True)
+            for token in sorted_tokens:  # ✅ 用 sorted_tokens
+                self.special_tokens[token] = self.bytes_to_ids[token.encode("utf-8")]
+            self.special_pattern = "(" + "|".join(re.escape(k) for k in sorted_tokens) + ")"
+
+        self.pat = re.compile(r"'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+")
+
+    def encode_chunk(self, text_bytes: bytes) -> List[int]:
+        pre_tokens = [s.encode("utf-8") for s in self.pat.findall(text_bytes.decode("utf-8", errors="replace"))]
+        token_ids: List[int] = []
+
+        for word_bytes in pre_tokens:
+            if not word_bytes:
+                continue
+
+            parts = [bytes([b]) for b in word_bytes]
+
+            while len(parts) > 1:
+                best_merge_info = min(
+                    (
+                        ((parts[i], parts[i + 1]),
+                         self.merged_ranks.get((parts[i], parts[i + 1]), float("inf")))
+                        for i in range(len(parts) - 1)
+                    ),
+                    key=lambda x: x[1],
+                )
+
+                if best_merge_info[1] == float("inf"):
+                    break
+
+                best_pair_to_merge = best_merge_info[0]
+
+                new_parts = []
+                i = 0
+                while i < len(parts):  # ✅ 不丢最后一个
+                    if i < len(parts) - 1 and (parts[i], parts[i + 1]) == best_pair_to_merge:  # ✅ 用 ==
+                        new_parts.append(parts[i] + parts[i + 1])
+                        i += 2
+                    else:
+                        new_parts.append(parts[i])
+                        i += 1
+                parts = new_parts
+
+            # ✅ while 完成后再追加
+            for part in parts:
+                token_ids.append(self.bytes_to_ids[part])
+
+        return token_ids  # ✅ for 循环结束后再 return
+
+    def encode(self, text: str) -> List[int]:
+        if not self.special_pattern:
+            return self.encode_chunk(text.encode("utf-8"))
+
+        chunks = re.split(self.special_pattern, text)
+        token_ids: List[int] = []
+        for chunk in chunks:
+            if not chunk:
+                continue
+            if chunk in self.special_tokens:
+                token_ids.append(self.special_tokens[chunk])
+            else:
+                token_ids.extend(self.encode_chunk(chunk.encode("utf-8")))
+        return token_ids
+
+    def decode(self, ids: List[int]) -> str:
+        all_bytes = b"".join(self.vocab.get(i, b"") for i in ids)
+        return all_bytes.decode("utf-8", errors="replace")
+
+    def encode_iterable(self, iterable: Iterable[str]) -> Iterator[int]:
+        """
+        给定字符串可迭代对象，懒惰地生成token ID。
+        """
+        for text_chunk in iterable:
+            encoded_ids = self.encode(text_chunk)
+            for token_id in encoded_ids:
+                yield token_id
+
+        
+
+
+
+
