@@ -12,7 +12,7 @@ from torch import Tensor, device
 from cs336_basics.MyBpeTokenizer import train_bpe
 from cs336_basics.MyBpeTokenizer import Tokenizer
 
-from cs336_basics.Transformer import Linear,Embedding,SwiGLU,scaled_dot_product_attention,RoPE,multihead_self_attention,RMSNorm
+from cs336_basics.Transformer import Linear,Embedding,SwiGLU,scaled_dot_product_attention,RoPE,multihead_self_attention,RMSNorm,transformer_block,transformer_lm
 
 
 def run_linear(
@@ -322,7 +322,38 @@ def run_transformer_block(
         Float[Tensor, "batch sequence_length d_model"] Tensor with the output of
         running the Transformer block on the input features while using RoPE.
     """
-    raise NotImplementedError
+    device = in_features.device
+    dtype = in_features.dtype
+    my_transformer_block = transformer_block(
+        d_model=d_model,
+        d_ff=d_ff,
+        numheads=num_heads,
+        maxseqlen=max_seq_len,
+        theta=theta,
+        device=device,
+        dtype=dtype,
+    )
+    qkv_weight = torch.cat(
+        [
+            weights["attn.q_proj.weight"],
+            weights["attn.k_proj.weight"],
+            weights["attn.v_proj.weight"],
+        ],
+        dim=0,
+    )
+
+    state_dict_to_load = {
+        "norm1.W": weights["ln1.weight"].to(device=device, dtype=dtype),
+        "attention.qkv_proj.W": qkv_weight.to(device=device, dtype=dtype),
+        "attention.o_proj.W": weights["attn.output_proj.weight"].to(device=device, dtype=dtype),
+        "norm2.W": weights["ln2.weight"].to(device=device, dtype=dtype),
+        "feedforward.W1": weights["ffn.w1.weight"].to(device=device, dtype=dtype),
+        "feedforward.W2": weights["ffn.w2.weight"].to(device=device, dtype=dtype),
+        "feedforward.W3": weights["ffn.w3.weight"].to(device=device, dtype=dtype),
+    }
+
+    my_transformer_block.load_state_dict(state_dict_to_load, strict=False)
+    return my_transformer_block(in_features)
 
 
 def run_transformer_lm(
@@ -404,7 +435,39 @@ def run_transformer_lm(
         Float[Tensor, "batch_size sequence_length vocab_size"]: Tensor with the predicted unnormalized
         next-word distribution for each token.
     """
-    raise NotImplementedError
+    model =transformer_lm(
+        vocab_size=vocab_size,
+        d_model=d_model,
+        num_layers=num_layers,
+        num_heads=num_heads,
+        d_ff=d_ff,
+        context_length=context_length,
+        rope_theta=rope_theta,
+    )
+    state_dict_to_load = {
+        "embedding.W": weights["token_embeddings.weight"],
+        "norm_final.W": weights["ln_final.weight"],
+        "final_linear.W": weights["lm_head.weight"],
+    }
+    for i in range(num_layers):
+        qkv_weight = torch.cat(
+            [
+                weights[f"layers.{i}.attn.q_proj.weight"],
+                weights[f"layers.{i}.attn.k_proj.weight"],
+                weights[f"layers.{i}.attn.v_proj.weight"],
+            ],
+            dim=0,
+        )
+        state_dict_to_load[f"blocks.{i}.attention.qkv_proj.W"] = qkv_weight
+        state_dict_to_load[f"blocks.{i}.attention.o_proj.W"] = weights[f"layers.{i}.attn.output_proj.weight"]
+        state_dict_to_load[f"blocks.{i}.norm1.weight"] = weights[f"layers.{i}.ln1.weight"]
+        state_dict_to_load[f"blocks.{i}.norm2.weight"] = weights[f"layers.{i}.ln2.weight"]
+        state_dict_to_load[f"blocks.{i}.ffn.w1.W"] = weights[f"layers.{i}.ffn.w1.weight"]
+        state_dict_to_load[f"blocks.{i}.ffn.w2.W"] = weights[f"layers.{i}.ffn.w2.weight"]
+        state_dict_to_load[f"blocks.{i}.ffn.w3.W"] = weights[f"layers.{i}.ffn.w3.weight"]
+    model.load_state_dict(state_dict_to_load, strict=False)
+    model.to(in_indices.device)
+    return model(in_indices, token_positions=None)
 
 
 def run_rmsnorm(
