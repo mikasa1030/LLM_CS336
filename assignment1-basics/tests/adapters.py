@@ -7,11 +7,14 @@ from typing import IO, Any, BinaryIO
 import numpy.typing as npt
 import torch
 from jaxtyping import Bool, Float, Int
-from torch import Tensor
-
+from torch import Tensor, device
 
 from cs336_basics.MyBpeTokenizer import train_bpe
 from cs336_basics.MyBpeTokenizer import Tokenizer
+
+from cs336_basics.Transformer import Linear,Embedding,SwiGLU,scaled_dot_product_attention,RoPE,multihead_self_attention,RMSNorm
+
+
 def run_linear(
     d_in: int,
     d_out: int,
@@ -30,8 +33,12 @@ def run_linear(
     Returns:
         Float[Tensor, "... d_out"]: The transformed output of your linear module.
     """
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    my_linear = Linear(d_in,d_out,device=device)
+    with torch.no_grad():
+        my_linear.W.copy_(weights)
 
-    raise NotImplementedError
+    return my_linear(in_features)
 
 
 def run_embedding(
@@ -52,8 +59,12 @@ def run_embedding(
     Returns:
         Float[Tensor, "... d_model"]: Batch of embeddings returned by your Embedding layer.
     """
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    my_mbedding = Embedding(vocab_size,d_model,device=device)
+    with torch.no_grad():
+        my_mbedding.embedding.copy_(weights)
 
-    raise NotImplementedError
+    return my_mbedding(token_ids)
 
 
 def run_swiglu(
@@ -85,7 +96,16 @@ def run_swiglu(
     # swiglu.w1.weight.data = w1_weight
     # swiglu.w2.weight.data = w2_weight
     # swiglu.w3.weight.data = w3_weight
-    raise NotImplementedError
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    my_swiglu = SwiGLU(d_model,d_ff)
+    with torch.no_grad():
+        my_swiglu.W1.copy_(w1_weight)
+        my_swiglu.W2.copy_(w2_weight)
+        my_swiglu.W3.copy_(w3_weight)
+    
+    
+    
+    return my_swiglu(in_features)
 
 
 def run_scaled_dot_product_attention(
@@ -106,7 +126,7 @@ def run_scaled_dot_product_attention(
     Returns:
         Float[Tensor, " ... queries d_v"]: Output of SDPA
     """
-    raise NotImplementedError
+    return scaled_dot_product_attention(Q,K,V,mask)
 
 
 def run_multihead_self_attention(
@@ -140,7 +160,18 @@ def run_multihead_self_attention(
         Float[Tensor, " ... sequence_length d_out"]: Tensor with the output of running your optimized, batched multi-headed attention
         implementation with the given QKV projection weights and input features.
     """
-    raise NotImplementedError
+    device = in_features.device
+    dtype = in_features.dtype
+
+    my_multiheadaattention = multihead_self_attention(d_model, num_heads, device=device, dtype=dtype)
+    weights = torch.cat((q_proj_weight, k_proj_weight, v_proj_weight), dim=0).to(device=device, dtype=dtype)
+    o_proj_weight = o_proj_weight.to(device=device, dtype=dtype)
+
+    with torch.no_grad():
+        my_multiheadaattention.qkv_proj.W.copy_(weights)
+        my_multiheadaattention.o_proj.W.copy_(o_proj_weight)
+
+    return my_multiheadaattention(in_features)
 
 
 def run_multihead_self_attention_with_rope(
@@ -180,7 +211,22 @@ def run_multihead_self_attention_with_rope(
         Float[Tensor, " ... sequence_length d_out"]: Tensor with the output of running your optimized, batched multi-headed attention
         implementation with the given QKV projection weights and input features.
     """
-    raise NotImplementedError
+    device = in_features.device
+    dtype = in_features.dtype
+
+    head_dim = d_model // num_heads
+    my_rope = RoPE(head_dim, max_seqlen=max_seq_len, theta=theta, device=device, dtype=dtype)
+    my_multiheadaattention = multihead_self_attention(d_model, num_heads, rope=my_rope, device=device, dtype=dtype)
+
+    weights = torch.cat((q_proj_weight, k_proj_weight, v_proj_weight), dim=0).to(device=device, dtype=dtype)
+    o_proj_weight = o_proj_weight.to(device=device, dtype=dtype)
+
+    with torch.no_grad():
+        my_multiheadaattention.qkv_proj.W.copy_(weights)
+        my_multiheadaattention.o_proj.W.copy_(o_proj_weight)
+
+    return my_multiheadaattention(in_features, token_poisitions=token_positions)
+    
 
 
 def run_rope(
@@ -202,7 +248,8 @@ def run_rope(
     Returns:
         Float[Tensor, " ... sequence_length d_k"]: Tensor with RoPEd input.
     """
-    raise NotImplementedError
+    my_rope = RoPE(d_model=d_k,theta=theta,max_seqlen=max_seq_len)
+    return my_rope(in_query_or_key,token_positions)
 
 
 def run_transformer_block(
@@ -380,7 +427,10 @@ def run_rmsnorm(
         Float[Tensor,"... d_model"]: Tensor of with the same shape as `in_features` with the output of running
         RMSNorm of the `in_features`.
     """
-    raise NotImplementedError
+    my_rmsnorm = RMSNorm(d_model,eps=eps)
+    with torch.no_grad():
+        my_rmsnorm.W.copy_(weights)
+    return my_rmsnorm(in_features)
 
 
 def run_silu(in_features: Float[Tensor, " ..."]) -> Float[Tensor, " ..."]:
