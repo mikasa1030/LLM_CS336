@@ -12,9 +12,9 @@ from torch import Tensor, cudnn_is_acceptable, device
 from cs336_basics.MyBpeTokenizer import train_bpe
 from cs336_basics.MyBpeTokenizer import Tokenizer
 
-from cs336_basics.Transformer import Linear,Embedding,SwiGLU,scaled_dot_product_attention,RoPE,multihead_self_attention,RMSNorm,transformer_block,transformer_lm
+from cs336_basics.Transformer import Linear,Embedding,SwiGLU,scaled_dot_product_attention,RoPE,multihead_self_attention,RMSNorm,transformer_block,transformer_lm,softmax,silu
 
-from cs336_basics.train import cross_entroy,AdamW,get_lr_consine_schedule,clip_grad_norm
+from cs336_basics.train import cross_entroy,AdamW,get_lr_consine_schedule,clip_grad_norm,save_checkpoint,load_checkpoint,get_batch
 
 
 def run_linear(
@@ -509,7 +509,7 @@ def run_silu(in_features: Float[Tensor, " ..."]) -> Float[Tensor, " ..."]:
         Float[Tensor,"..."]: of with the same shape as `in_features` with the output of applying
         SiLU to each element.
     """
-    raise NotImplementedError
+    return silu(in_features)
 
 
 def run_get_batch(
@@ -532,7 +532,7 @@ def run_get_batch(
         is the sampled input sequences, and the second tuple item is the corresponding
         language modeling labels.
     """
-    raise NotImplementedError
+    return get_batch(dataset,batch_size,context_length,device)
 
 
 def run_softmax(in_features: Float[Tensor, " ..."], dim: int) -> Float[Tensor, " ..."]:
@@ -548,7 +548,7 @@ def run_softmax(in_features: Float[Tensor, " ..."], dim: int) -> Float[Tensor, "
         Float[Tensor, "..."]: Tensor of with the same shape as `in_features` with the output of
         softmax normalizing the specified `dim`.
     """
-    raise NotImplementedError
+    return softmax(in_features)
 
 
 def run_cross_entropy(
@@ -578,7 +578,7 @@ def run_gradient_clipping(parameters: Iterable[torch.nn.Parameter], max_l2_norm:
 
     The gradients of the parameters (parameter.grad) should be modified in-place.
     """
-    raise NotImplementedError
+    return clip_grad_norm(parameters,max_l2_norm)
 
 
 def get_adamw_cls() -> Any:
@@ -632,7 +632,7 @@ def run_save_checkpoint(
             we've completed.
         out (str | os.PathLike | BinaryIO | IO[bytes]): Path or file-like object to serialize the model, optimizer, and iteration to.
     """
-    raise NotImplementedError
+    return save_checkpoint(model,optimizer,iteration,out)
 
 
 def run_load_checkpoint(
@@ -653,7 +653,7 @@ def run_load_checkpoint(
     Returns:
         int: the previously-serialized number of iterations.
     """
-    raise NotImplementedError
+    return load_checkpoint(src,model,optimizer)
 
 
 def get_tokenizer(

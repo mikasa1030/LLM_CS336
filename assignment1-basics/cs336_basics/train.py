@@ -94,8 +94,50 @@ def clip_grad_norm(parameters, max_norm: float, norm_type: float = 2.0, error_if
 
     eps = 1e-8
     total_norm = torch.linalg.norm(torch.stack([torch.linalg.norm(g.detach(),ord=norm_type) for g in grads]),ord=norm_type)
-    clip_norm = max_norm/(eps,total_norm)
+    clip_norm = max_norm/(eps+total_norm)
 
     if clip_norm<1:
         for g in grads:
             g.detach().mul_(clip_norm.to(g.device))
+
+def save_checkpoint( model: torch.nn.Module,
+    optimizer: torch.optim.Optimizer,
+    iteration: int,
+    out):
+
+    model_weight = model.state_dict()
+    optimizer_weight = optimizer.state_dict()
+
+    checkpoint = {
+        "model_weight":model_weight,
+        "optimizer_states":optimizer_weight,
+        "iteration":iteration
+    }
+    torch.save(obj=checkpoint,f=out)
+
+def load_checkpoint(src,model:torch.nn.Module,optimizer:torch.optim.Optimizer)->int:
+    checkpoint = torch.load(src)
+    model.load_state_dict(checkpoint["model_weight"])
+    optimizer.load_state_dict(checkpoint["optimizer_states"])
+    return checkpoint["iteration"]
+
+def get_batch(dataset: npt.NDArray,
+    batch_size: int,
+    context_length: int,
+    device: str,
+    dtype: torch.dtype = torch.long,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    
+    total_len = dataset.shape[0]
+    max_start_index = total_len - context_length
+
+    starts = torch.randint(low=0,high=max_start_index,size=(batch_size,))
+    label_batch = torch.empty((batch_size,context_length),dtype=dtype)
+    data_batch = torch.empty((batch_size,context_length),dtype=dtype)
+
+    for i,start in enumerate(starts):
+        data_batch[i] = torch.tensor(dataset[start:start+context_length])
+        label_batch[i] = torch.tensor(dataset[start+1,start+context_length+1])
+
+    return data_batch.to(device),label_batch.to(device)
+

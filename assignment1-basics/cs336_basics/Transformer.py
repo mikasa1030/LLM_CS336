@@ -45,6 +45,10 @@ class SharedLinear(nn.Module):
     def forward(self,x: torch.Tensor) -> torch.Tensor:
         return einsum(x,self.W,"... i,o i -> ... o")
 
+def silu(x:torch.Tensor)->torch.Tensor:
+    return x*(1/(1+torch.exp(-x)))
+
+
 class SwiGLU(nn.Module):
     def __init__(self,d_model:int,d_ff:int,device: Optional[torch.device]=None,dtype: Optional[torch.dtype]=None)->None:
         super().__init__()
