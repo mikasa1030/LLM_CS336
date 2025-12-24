@@ -7,14 +7,14 @@ from typing import IO, Any, BinaryIO
 import numpy.typing as npt
 import torch
 from jaxtyping import Bool, Float, Int
-from torch import Tensor, device
+from torch import Tensor, cudnn_is_acceptable, device
 
 from cs336_basics.MyBpeTokenizer import train_bpe
 from cs336_basics.MyBpeTokenizer import Tokenizer
 
 from cs336_basics.Transformer import Linear,Embedding,SwiGLU,scaled_dot_product_attention,RoPE,multihead_self_attention,RMSNorm,transformer_block,transformer_lm
 
-from cs336_basics.train import cross_entroy
+from cs336_basics.train import cross_entroy,AdamW,get_lr_consine_schedule,clip_grad_norm
 
 
 def run_linear(
@@ -585,7 +585,7 @@ def get_adamw_cls() -> Any:
     """
     Returns a torch.optim.Optimizer that implements AdamW.
     """
-    raise NotImplementedError
+    return AdamW
 
 
 def run_get_lr_cosine_schedule(
@@ -613,7 +613,7 @@ def run_get_lr_cosine_schedule(
     Returns:
         Learning rate at the given iteration under the specified schedule.
     """
-    raise NotImplementedError
+    return get_lr_consine_schedule(it,max_learning_rate,min_learning_rate,warmup_iters,cosine_cycle_iters)
 
 
 def run_save_checkpoint(
